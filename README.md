@@ -1,23 +1,14 @@
-# Shiftboard
+I merged this into my existing [small-business-backoffice project](https://github.com/jackaI1/small-business-backoffice/tree/main/projects/angular-express-ops-dashboard). The current code is in `projects/angular-express-ops-dashboard/` there. I kept the code here so older links still work.
 
-I built a venue operations dashboard because I wanted to see where a busy shift needed attention without sorting through rows of counts. A daily total can hide a crowded entrance or a quiet service desk. I wanted to compare the hours and stations together, then take the same filtered numbers into a spreadsheet.
+The move keeps the original layout, including `playwright.config.ts`, `web/vitest.config.ts`, `web/src/main.ts`, `web/src/app/app.spec.ts`. I replaced the README with the report below and left out Git history, installed dependencies, caches and generated build output from the hub copy.
 
-I can choose dates and a station, see when activity peaked, compare demand with staffing capacity, and review unusual hours. Each panel has its own loading message and retry button, so one failed request does not hide everything else. **All data is fictional:** seven days, four stations, and 336 station-hour records. No visitor or staff information is collected.
+The project checks are configured in the hub at `.github/workflows/angular-express-ops-dashboard-ci.yml`, with commands run from this project folder and changes filtered to its paths.
 
-To try it locally, install [Node.js 24](https://nodejs.org/), then run:
+---
 
-```sh
-git clone https://github.com/jackaI1/angular-express-ops-dashboard.git
-cd angular-express-ops-dashboard
-npm ci
-npm run seed
-npm run build
-npm start
-```
+# angular-express-ops-dashboard
 
-Open **http://127.0.0.1:3000/venue/** for the shiftboard. **Production overview** at the root address keeps the existing production dashboard available, including its output totals, SQLite database, filters and record pagination. Each dashboard links to the other. Stop the app with Ctrl+C.
-
-![The shift overview with hourly volume, station utilisation, and unusual hours](docs/dashboard.png)
+I built a venue operations dashboard to learn how the underlying idea works. This is a learning project.
 
 ## How I use it
 
@@ -39,24 +30,6 @@ I kept the hourly chart in HTML and CSS rather than adding a chart package. The 
 
 The [design notes](docs/design.md) explain the calculations, request lifecycle, API routes, and tradeoffs. The records are generated in [server/data.mjs](server/data.mjs); the shared TypeScript response shapes are in [shared/models.ts](shared/models.ts).
 
-## Development and checks
-
-```sh
-npm ci
-npx playwright install chromium
-npm run dev             # Production at :4200, venue at :4201/venue/, shared API at :3000
-npm run lint
-npm test                # API tests and Angular Jasmine/Karma tests
-npm run build
-npm run test:e2e         # Venue app, Chromium desktop and mobile viewports
-npm run test:smoke       # Existing seeded production HTTP journey
-npm run test:browser     # Existing production browser journey
-```
-
-On Linux, use `npx playwright install --with-deps chromium` to install browser dependencies too. `npm run test:e2e` starts its own server on **4173** and stops it afterwards; build first. Ctrl+C stops all three development processes. The built server at port 3000 connects both dashboards; the development servers work on their own screens. I record their process IDs, start times, ports, and cleanup commands in ignored `.runtime/` files.
-
-GitHub Actions runs lint, **52 API tests**, **34 Angular unit tests**, the production build, and **22 venue browser tests**, the existing production browser journey, and a clean-start smoke scenario on changes and on `main`. Browser checks use the real Express API for filtering, routing, downloads, and empty states; controlled request failures check the individual loading and retry behaviour. Failed browser runs upload traces for debugging.
-
 ## Production dashboard
 
 The production screen at **http://127.0.0.1:3000/** compares output, rejects and stopped time across 180 fictional runs. Its date, production-line and status filters, paginated records, SQLite storage, validation and rate limiting remain available. I kept its [walkthrough](docs/production.md), [API contract](docs/api.md), [design notes](docs/production-design.md), tests and browser journey alongside the venue view. `npm run seed` refreshes only demo rows; `DATABASE_PATH` selects a separate local database.
@@ -64,3 +37,11 @@ The production screen at **http://127.0.0.1:3000/** compares output, rejects and
 ## Limits I kept explicit
 
 This is a local demonstration with deterministic sample data, not a live venue monitoring service. The anomaly rules are fixed thresholds: at least 95% utilisation is a surge, and below 25% is quiet. They flag hours to investigate rather than diagnosing a staffing problem. The venue sample is generated in memory; the production sample uses SQLite. Neither view has authentication or live event ingestion. The server binds to the local computer by default.
+
+## Tests and limits
+
+There are 6 test source files in this copy. That source count does not establish an execution result. This is a source snapshot, and running it on a new machine may need environment-specific setup.
+
+
+
+Retained project workflows: `angular-express-ops-dashboard-ci.yml`. Their commands use this folder and their triggers use its paths.
