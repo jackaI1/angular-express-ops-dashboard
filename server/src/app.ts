@@ -5,7 +5,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { filterSchema, pageSchema } from './validation.js';
 import { byLine, runs, summary, trends } from './queries.js';
 
-interface Options { rateLimitMax?: number; staticDir?: string; onError?: (error: unknown) => void }
+interface Options { rateLimitMax?: number; staticDir?: string; venueDir?: string; extraRoutes?: express.RequestHandler; onError?: (error: unknown) => void }
 export function createApp(db: DatabaseSync, options: Options = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -29,6 +29,11 @@ export function createApp(db: DatabaseSync, options: Options = {}) {
   app.get('/api/trends', (req, res) => res.json({ data: trends(db, filterSchema.parse(req.query)) }));
   app.get('/api/lines', (req, res) => res.json({ data: byLine(db, filterSchema.parse(req.query)) }));
   app.get('/api/runs', (req, res) => res.json(runs(db, pageSchema.parse(req.query))));
+  if (options.extraRoutes) app.use(options.extraRoutes);
+  if (options.venueDir) {
+    app.use('/venue', express.static(options.venueDir));
+    app.get('/venue/{*path}', (_req, res) => res.sendFile('index.html', { root: options.venueDir! }));
+  }
   const notFound: express.RequestHandler = (_req, res) => { res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Route not found.' } }); };
   app.use('/api', notFound);
   if (options.staticDir) app.use(express.static(options.staticDir));

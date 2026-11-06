@@ -1,10 +1,10 @@
-I built a production dashboard because I wanted to compare output, rejected units and stopped time without adding up rows by hand. I can narrow the view to a date range, a production line or delayed runs, then inspect the individual records behind each total.
+# Shiftboard
 
-The included example has 180 fictional production runs across three lines in October 2026. It contains no real facility or personal data.
+I built a venue operations dashboard because I wanted to see where a busy shift needed attention without sorting through rows of counts. A daily total can hide a crowded entrance or a quiet service desk. I wanted to compare the hours and stations together, then take the same filtered numbers into a spreadsheet.
 
-## Try it
+I can choose dates and a station, see when activity peaked, compare demand with staffing capacity, and review unusual hours. Each panel has its own loading message and retry button, so one failed request does not hide everything else. **All data is fictional:** seven days, four stations, and 336 station-hour records. No visitor or staff information is collected.
 
-Install [Node.js 24](https://nodejs.org/en/download), then run these commands in a terminal:
+To try it locally, install [Node.js 24](https://nodejs.org/), then run:
 
 ```sh
 git clone https://github.com/jackaI1/angular-express-ops-dashboard.git
@@ -15,54 +15,52 @@ npm run build
 npm start
 ```
 
-Open **http://localhost:3000**. Choose dates, a line or a status and click **Apply filters**. **Reset** shows every sample run again. Use **Next** and **Previous** below the records to move through pages. Press Ctrl+C in the terminal when finished.
+Open **http://127.0.0.1:3000/venue/** for the shiftboard. **Production overview** at the root address keeps the existing production dashboard available, including its output totals, SQLite database, filters and record pagination. Each dashboard links to the other. Stop the app with Ctrl+C.
 
-The totals always cover every matching run, even when the table shows only ten records. “Good units” means produced units minus rejected units. The rejection percentage is rejected units divided by produced units, so a small run does not count as much as a large one. No output is shown as “No output” instead of a misleading percentage.
+![The shift overview with hourly volume, station utilisation, and unusual hours](docs/dashboard.png)
 
-![Dashboard with output comparisons and production records](docs/dashboard.png)
+## How I use it
+
+1. On **Shift overview**, choose dates between **26 October and 1 November 2026**, select a station, and click **Apply filters**. The default view covers the whole sample week: **23,325 interactions**.
+2. Read **Hourly volume** to find the busiest hour. Each bar combines that hour across the selected dates. Open **View hourly values** for the same numbers in a table.
+3. Compare **Station utilisation**, meaning demand divided by staffed handling capacity. A value above 100% means demand exceeded that capacity, not that a machine ran for more than an hour.
+4. Open **Anomaly review** to see every flagged hour. Use **Show** to separate surges from quiet hours. The Friday 18:00 North gate surge reaches **127.8%**, while Wednesday 14:00 at the Information desk is unusually quiet.
+5. Click **Export CSV** to download a spreadsheet file containing the station-hour rows behind the applied filters. Edits only take effect after **Apply filters**. The export includes all matching rows, including ordinary hours, regardless of the anomaly review's Show setting.
+
+The address bar keeps the applied dates and station. I can copy a link or reload either page without losing that selection. Dates outside the sample week produce a clear empty state. Invalid dates and ranges longer than 31 days are rejected.
 
 ## How I put it together
 
-The Angular app provides the filters, comparisons and records table. It asks an Express.js API, a set of HTTP addresses that return data, for the totals and records. I wrote the API in TypeScript and store the runs in SQLite, a database kept in one local file. No database service or account is needed.
+I used Angular standalone components, which keep each screen and its dependencies together. Routing gives the overview and anomaly review their own addresses. My typed reactive form checks the date range before applying it.
 
-I validate each query before it reaches the database, including real calendar dates, permitted line names and page limits. SQL queries calculate the totals and bind filter values separately from the query text. The records have a fixed order so two pages do not overlap when runs share a date.
+The data service uses RxJS, a library for handling changing values over time. When I apply new filters, `switchMap` cancels requests for the old selection. The three panels make independent HTTP requests, with separate loading, error, and retry states. An Express.js API validates the same filters, calculates the chart totals, and generates the CSV. Express also serves the built dashboard, so running the production app only needs one process.
 
-The API has shared error handling and a limit of 300 requests per minute per client address. The dashboard explains invalid filters and server failures, provides a retry, and cancels older requests when a new filter is applied.
+I kept the hourly chart in HTML and CSS rather than adding a chart package. The labels, hourly table, keyboard focus, and mobile layout make the values usable without relying on colour or hovering.
 
-## Run and change it
+The [design notes](docs/design.md) explain the calculations, request lifecycle, API routes, and tradeoffs. The records are generated in [server/data.mjs](server/data.mjs); the shared TypeScript response shapes are in [shared/models.ts](shared/models.ts).
+
+## Development and checks
 
 ```sh
-npm run dev      # API on port 3000, Angular development view on port 4200
-npm test         # API integration tests, then Angular tests
-npm run build    # Compile both apps
-npm run test:smoke  # Seed a temporary database twice and check the compiled app over HTTP
+npm ci
 npx playwright install chromium
-npm run test:browser  # Exercise the real dashboard at desktop and mobile widths
+npm run dev             # Production at :4200, venue at :4201/venue/, shared API at :3000
+npm run lint
+npm test                # API tests and Angular Jasmine/Karma tests
+npm run build
+npm run test:e2e         # Venue app, Chromium desktop and mobile viewports
+npm run test:smoke       # Existing seeded production HTTP journey
+npm run test:browser     # Existing production browser journey
 ```
 
-`npm run seed` replaces only rows marked as demo data, using the same fixed recipe each time. It leaves other rows alone. The default database is `data/operations.sqlite`, which Git ignores. Set `DATABASE_PATH` to an absolute file path to use a separate database; set `PORT` to change the API port. Environment variables are read from the shell.
+On Linux, use `npx playwright install --with-deps chromium` to install browser dependencies too. `npm run test:e2e` starts its own server on **4173** and stops it afterwards; build first. Ctrl+C stops all three development processes. The built server at port 3000 connects both dashboards; the development servers work on their own screens. I record their process IDs, start times, ports, and cleanup commands in ignored `.runtime/` files.
 
-The server listens on this computer only. This is a local, read-only demonstration. I have not added login, importing real facility data or editing runs. The rate limit is kept in one server process; a shared deployment would need shared limit storage and a deliberate proxy configuration.
+GitHub Actions runs lint, **52 API tests**, **34 Angular unit tests**, the production build, and **22 venue browser tests**, the existing production browser journey, and a clean-start smoke scenario on changes and on `main`. Browser checks use the real Express API for filtering, routing, downloads, and empty states; controlled request failures check the individual loading and retry behaviour. Failed browser runs upload traces for debugging.
 
-## API and implementation details
+## Production dashboard
 
-| Address | What it returns |
-| --- | --- |
-| `GET /api/summary` | Output, rejection and downtime totals |
-| `GET /api/lines` | The same totals grouped by production line |
-| `GET /api/trends` | Daily totals, oldest date first |
-| `GET /api/runs` | Matching records with page counts |
-| `GET /api/health` | A database connectivity check |
+The production screen at **http://127.0.0.1:3000/** compares output, rejects and stopped time across 180 fictional runs. Its date, production-line and status filters, paginated records, SQLite storage, validation and rate limiting remain available. I kept its [walkthrough](docs/production.md), [API contract](docs/api.md), [design notes](docs/production-design.md), tests and browser journey alongside the venue view. `npm run seed` refreshes only demo rows; `DATABASE_PATH` selects a separate local database.
 
-For example, with the app running:
+## Limits I kept explicit
 
-```sh
-curl 'http://localhost:3000/api/summary?line=alpha&from=2026-10-01&to=2026-10-07'
-curl 'http://localhost:3000/api/runs?status=delayed&page=1&pageSize=10'
-```
-
-I documented the parameters, response examples and design choices in [docs/api.md](docs/api.md) and [docs/design.md](docs/design.md). The main code is in `server/src/`, the dashboard in `web/src/app/`, and the clean-start check in `scripts/smoke.mjs`.
-
-## Checks
-
-One GitHub Actions workflow runs the API and Angular tests, builds both apps, checks the compiled app against a newly seeded database, and exercises dashboard controls in Chromium at desktop and mobile sizes. The automated checks include **35 API and database integration cases**, **8 Angular cases**, **1 compiled-app smoke scenario**, and **1 browser journey**. Supertest sends HTTP requests through the real Express app against SQLite, including hand-calculated totals, invalid inputs, pagination, rate limits and database failures.
+This is a local demonstration with deterministic sample data, not a live venue monitoring service. The anomaly rules are fixed thresholds: at least 95% utilisation is a surge, and below 25% is quiet. They flag hours to investigate rather than diagnosing a staffing problem. The venue sample is generated in memory; the production sample uses SQLite. Neither view has authentication or live event ingestion. The server binds to the local computer by default.

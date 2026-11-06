@@ -130,6 +130,7 @@ test('real dashboard journey at desktop and mobile widths', { timeout: 60000 }, 
       if (server) { assert.throws(() => process.kill(server.pid, 0), { code: 'ESRCH' }); console.log(`Verified owned browser-check server PID=${server.pid} exited`); }
     });
     await attempt(() => rmSync(dir, { recursive: true, force: true }));
+    // eslint-disable-next-line no-unsafe-finally -- Cleanup failures must fail the browser check.
     if (cleanupErrors.length) throw new AggregateError(cleanupErrors, 'Fixture cleanup failed');
   }
 });
