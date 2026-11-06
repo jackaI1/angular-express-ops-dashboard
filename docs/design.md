@@ -1,27 +1,57 @@
 # Design notes
 
-I wanted a short path from a production question to the records that explain it: filter the runs, compare the totals, then inspect a page of records. The data is fictional so the repository can be public and run without access to any facility.
+I wanted one place to answer three questions: when was the venue busiest, which station faced the most pressure, and which hours deserve a closer look?
 
-## Data and request flow
+## Screens and layout
 
-The Angular form keeps draft filters separate from applied filters. Applying them resets the table to page one and requests four typed responses in parallel. Changing pages keeps the applied filters. An older in-flight request is cancelled before a new one starts. Loading and error states hide old totals, so an unsuccessful filter cannot leave an earlier result looking current.
+I used a slate background (`#edf2f6`), white working surfaces (`#ffffff`), ink text (`#203649`), blue hourly bars (`#2458a6`), teal station meters (`#287f81`), and amber surge flags (`#936016`). Avenir Next, with local system fallbacks, gives the headings a compact feel without a font download. Labels remain sentence case, and the numbers use aligned digits.
 
-Express validates parameters with strict Zod schemas before running SQL. SQLite computes sums, grouped daily totals and line comparisons. Every filter value is bound as a parameter; the only SQL identifiers and operators come from fixed server code. Pagination uses a capped page size and a date/id sort. Shared TypeScript response types live in `server/src/contracts.ts` and are imported as types by Angular.
+The hourly chart is the main visual. Station comparisons sit alongside it on wide screens, and anomaly rows span the width below. On phones, the panels stack and only the anomaly table scrolls horizontally. The controls, headings, and values stay left aligned. I avoided an extra row of disconnected metric cards: totals and peak hour belong with the hourly chart they describe.
 
-The database schema constrains counts, line names, shifts, statuses and rejection totals. A single transaction replaces the marked demo rows with 30 days, three lines and two shifts per day. Fixed integer formulas provide variation without random values or dependence on the clock. A conflicting non-demo ID fails and rolls back the seed instead of replacing that row.
+```text
+Navigation: Shift overview | Anomaly review
+Date range + station + apply + export
+Hourly volume (wide)       | Station utilisation
+Hours worth a closer look (full width)
+```
 
-## Local operation
+The review route replaces the three-panel overview with the full anomaly table and a surge/quiet selector. Both routes share applied filters.
 
-I chose Node 24's built-in SQLite driver to keep setup small. Its queries are synchronous, which suits this small read-only dataset; a larger service would need to measure request blocking and move to a worker or a database driver suitable for higher concurrency. The server owns the database connection, closes it on shutdown, and serves the compiled Angular files on the same origin. Development uses Angular's proxy for `/api` requests.
+## Synthetic dataset and calculations
 
-I chose SQLite over PostgreSQL because the demo does not need multiple database writers and I wanted a clean checkout to run without a database service. I chose server aggregation over browser aggregation so pagination never changes the totals.
+`server/data.mjs` generates 7 dates × 12 hours × 4 stations = 336 records using fixed arithmetic. The dates are 2026-10-26 through 2026-11-01, inclusive, and hours are venue-local 12 through 23. There are no time zone conversions or visitor-level records. `volume` counts interactions, not distinct people.
 
-## Interface
+Each station has a fixed handling capacity per hour. Utilisation is `volume / capacity * 100`, rounded to one decimal place. For multiple hours, I divide the sum of volume by the sum of capacity. I do not add percentages. Ratios above 100% are meaningful demand pressure; the visual meter stops at 100%, but the numeric label retains the full ratio.
 
-The dashboard is an operating view, with a short filter form, a summary strip, a line comparison beside daily totals, and the records underneath. Slate text (`#23364a`), blue comparisons (`#2877ac`) and a pale workspace (`#f4f7fa`) keep the tables legible. Delayed status uses both text and color. Tables use aligned numbers; overflowing tables have keyboard-focusable scroll regions. At narrow widths the filters wrap and the comparison sections stack. Focus outlines and error, loading and empty states are explicit.
+The volume endpoint groups all selected dates by hour of day. Peak hour is the first hour with the maximum volume; no activity yields `null`. Stations without records have zero activity and capacity. The anomaly endpoint computes surge (utilisation >=95%) and quiet (<25%) labels from individual station hours and sorts highest utilisation first. The overview shows the first five; the review route shows all matching rows. This is threshold detection, not a statistical anomaly model.
 
-## Verification boundaries
+## Angular request lifecycle
 
-The API tests use real SQLite and Supertest rather than a mocked query layer. The Angular tests use Angular's HTTP testing backend to check requests and rendered states. The compiled-app smoke test runs the actual seed command twice, compares every generated row, launches the compiled server on an ephemeral port, checks responses and the Angular bundle, then stops the owned process in a finally block. It checks process exit before removing its temporary database.
+`FiltersComponent` owns a typed, non-nullable `FormGroup` for from/to/station. A group validator checks real calendar dates, ordering, and a maximum of 31 inclusive days. Applying a valid form writes query parameters. Shared links and browser navigation restore the form from the route. An invalid link displays a warning and loads the default dataset until corrected.
 
-There is no external service, background worker or persistent test server. Local browser checks close every test page and owned browser process. The rate limit is per process, the dataset is deliberately small, and this demo is not a multi-user production deployment.
+`DataService` owns applied filters in a `BehaviorSubject`, an observable with a current value. Each panel combines filter changes with its own retry subject. Nested `switchMap` cancels obsolete requests, including retries from an old filter selection. `catchError` is inside the request stream, so an error does not terminate later updates. `startWith` emits loading for every request, and `shareReplay` shares one current response among subscribers. Its reference counting and Angular async pipes release subscriptions when the route is destroyed. The metadata and download subscriptions use `takeUntilDestroyed` as well.
+
+`PanelComponent` consistently renders loading and errors, with a panel-specific retry button. Projection only displays ready content, avoiding a stale chart during a new request. A separate metadata error can be retried while the charts remain visible. Download failures keep the Export CSV button available. I capture the applied filters when an export begins so the filename continues to describe its response if filters change while it downloads.
+
+## API contract
+
+All data routes accept `from=YYYY-MM-DD`, `to=YYYY-MM-DD`, and `station=all|north|south|concessions|information`. Dates are inclusive. Defaults cover the sample week. Malformed, duplicated, reversed, and oversized filters return JSON with HTTP 400. Valid dates outside the sample dataset return empty results.
+
+| GET route         | Response                                                              |
+| ----------------- | --------------------------------------------------------------------- |
+| `/api/health`     | Health status                                                         |
+| `/api/metadata`   | Date bounds and station names/capacity                                |
+| `/api/volume`     | Total, peak hour, 12 hourly counts                                    |
+| `/api/stations`   | Volume, summed capacity, weighted utilisation per selected station    |
+| `/api/anomalies`  | Flagged station hours sorted by utilisation                           |
+| `/api/export.csv` | All matching station-hour rows, including capacity and anomaly labels |
+
+The CSV quotes every cell, escapes quotes, and neutralises spreadsheet formula prefixes. The download uses the applied date/station filters, not unsubmitted form edits or the review-only Show selector. Unknown API routes return JSON 404; non-API routes serve the Angular shell for direct navigation.
+
+## Running and verifying
+
+The Angular 20 app uses strict TypeScript and strict template checking. Express 5 serves both built apps and the API from one local origin. The production app stays at `/`, while the venue app is mounted at `/venue/`. The host in `server/src/index.ts` combines the original database-backed API with venue-only routes, so venue filter validation never intercepts production queries. Each Angular build keeps its own pinned compiler version: the existing production workspace uses Angular 22, and the venue app uses Angular 20 with Jasmine/Karma. In development, both Angular servers proxy `/api` to Express. The production view uses port 4200, and the venue view uses port 4201. The Node scripts forward termination signals to owned child processes; test servers use Playwright's graceful shutdown and never reuse unrelated listeners.
+
+Jasmine/Karma unit tests use Angular TestBed and HttpTestingController to test actual forms, rendered panels, cancellation, request sharing, retries, and CSV parameters. Node tests exercise the Express app through HTTP, including arithmetic and invalid inputs. Playwright runs against the production build in Chromium at desktop and mobile sizes; it checks the real CSV bytes as well as user-visible chart totals. Only failure/loading tests intercept requests.
+
+Useful references: [Angular typed forms](https://angular.dev/guide/forms/typed-forms), [Angular HTTP testing](https://angular.dev/guide/http/testing), and [RxJS switchMap](https://rxjs.dev/api/operators/switchMap).

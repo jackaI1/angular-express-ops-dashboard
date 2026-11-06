@@ -1,10 +1,16 @@
 node_modules/
 dist/
 .angular/
+out-tsc/
 coverage/
+playwright-report/
+test-results/
+.runtime/
+.env
+*.log
+.DS_Store
 data/
 *.sqlite*
-.env
 .env.*
 !.env.example
 .superpowers/
