@@ -85,6 +85,9 @@ test('real dashboard journey at desktop and mobile widths', { timeout: 60000 }, 
     await page.getByText('Page 1 of 18', { exact: true }).waitFor();
     for (const [width, height, filename] of [[1440, 1100, 'dashboard.png'], [390, 844, 'dashboard-mobile.png']]) {
       await page.setViewportSize({ width, height });
+      await page.locator('.daily-scroll').evaluate(element => { element.scrollTop = 0; });
+      assert.equal(await page.getByTestId('daily-totals').locator('tbody tr').count(), 30);
+      await page.getByTestId('daily-totals').scrollIntoViewIfNeeded();
       await page.evaluate(() => window.scrollTo(0, 0));
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `page overflow at ${width}px`);
       if (process.env['SCREENSHOT_DIR']) {
